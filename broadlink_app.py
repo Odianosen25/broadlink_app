@@ -85,96 +85,78 @@ class Broadlink_App(ad.ADBase):
         else:
             raise ValueError("No Devices given, please provide Broadlink Devices")
         
-        self.entities = {} #to assist with HASS entities
-        self.broadlinkObjects = {}#to store broadlink objects
+        self.entities = {} # to assist with HASS entities
+        self.broadlinkObjects = {} # to store broadlink objects
+        self.broadlinkErrors = {} # to count the number of errors 
 
-        self.avail_services = ["setup_broadlink", "learn", "sweep_frequency", "cancel_sweep_frequency", "check_frequency",
+        self.avail_services = ["learn", "sweep_frequency", "cancel_sweep_frequency", "check_frequency",
                                 "find_rf_packet", "check_data", "send_data", "check_temperature", "check_sensors"]
 
         # run in used here instead of direct call, so it doesn't
         # hold up AD from executing other apps due to delay
-        self.adbase.run_in(self.setup_broadlink_cb, 0)
+        self.adbase.run_in(self.run_service, 0, service="setup_broadlink", init=True)
 
-    def learn(self, entity_id):
+    def learn(self, **kwargs):
+        entity_id = kwargs.get("entity_id")
         self._check_broadlink(entity_id)
         self.adbase.log(f"Broadlink device with Entity_ID {entity_id} Learning...")
-        try:
-            self.broadlinkObjects[entity_id].enter_learning()
-            domain, name = entity_id.split(".")
-            learn_time = self.args["broadlinks"][name].get("learn_time", 5)
-            self.adbase.run_in(self.check_data_cb, learn_time, entity_id=entity_id)
-            return True
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
-            return False
+        self.broadlinkObjects[entity_id].enter_learning()
+        domain, name = entity_id.split(".")
+        learn_time = self.args["broadlinks"][name].get("learn_time", 5)
+        self.adbase.run_in(self.run_service, learn_time, entity_id=entity_id, service="check_data")
+
+        if self.adbase.get_state(entity_id, copy=False) != "off": 
+            self.adbase.set_state(entity_id, state="on", attributes=self.entities[entity_id]["attributes"])
     
-    def sweep_frequency(self, entity_id):
+    def sweep_frequency(self, **kwargs):
+        entity_id = kwargs.get("entity_id")
         self._check_broadlink(entity_id)
-        try:
-            self.adbase.log(f"Broadlink device with Entity_ID {entity_id} Sweeping Frequency...")
-            self.broadlinkObjects[entity_id].sweep_frequency()
-            return True
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
-            return False
+        self.adbase.log(f"Broadlink device with Entity_ID {entity_id} Sweeping Frequency...")
+        self.broadlinkObjects[entity_id].sweep_frequency()
+        if self.adbase.get_state(entity_id, copy=False) != "off": 
+            self.adbase.set_state(entity_id, state="on", attributes=self.entities[entity_id]["attributes"])
 
-
-    def cancel_sweep_frequency(self, entity_id):
+    def cancel_sweep_frequency(self, **kwargs):
+        entity_id = kwargs.get("entity_id")
         self._check_broadlink(entity_id)
-        try:
-            self.adbase.log(f"Cancelling Sweeping Frequency for Broadlink device with Entity_ID {entity_id}")
-            self.broadlinkObjects[entity_id].cancel_sweep_frequency()
-            return True
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
-            return False
+        self.adbase.log(f"Cancelling Sweeping Frequency for Broadlink device with Entity_ID {entity_id}")
+        self.broadlinkObjects[entity_id].cancel_sweep_frequency()
+        if self.adbase.get_state(entity_id, copy=False) != "off": 
+            self.adbase.set_state(entity_id, state="on", attributes=self.entities[entity_id]["attributes"])
     
-    def check_frequency(self, entity_id):
+    def check_frequency(self, **kwargs):
+        entity_id = kwargs.get("entity_id")
         self._check_broadlink(entity_id)
-        try:
-            return self.broadlinkObjects[entity_id].check_frequency()
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
-            return False
-
-    def find_rf_packet(self, entity_id):
+        return self.broadlinkObjects[entity_id].check_frequency()
+    
+    def find_rf_packet(self, **kwargs):
+        entity_id = kwargs.get("entity_id")
         self._check_broadlink(entity_id)
         self.adbase.log(f"Broadlink device with Entity_ID {entity_id} searching for RF packet...")
-        try:
-            self.broadlinkObjects[entity_id].find_rf_packet()
-            learn_time = self.args["broadlinks"][name].get("learn_time", 5)
-            self.adbase.run_in(self.check_data_cb, learn_time, entity_id=entity_id)
-            return True
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
-            return False
 
-    def check_data_cb(self, kwargs):
-        self.check_data(kwargs["entity_id"])
+        self.broadlinkObjects[entity_id].find_rf_packet()
+        siteId = entity_id.split(".")[1]
+        learn_time = self.args["broadlinks"][siteId].get("learn_time", 5)
+        self.adbase.run_in(self.run_service, learn_time, entity_id=entity_id, service="check_data")
+        if self.adbase.get_state(entity_id, copy=False) != "off": 
+            self.adbase.set_state(entity_id, state="on", attributes=self.entities[entity_id]["attributes"])
 
-    def check_data(self, entity_id):
+    def check_data(self, **kwargs):
+        entity_id = kwargs.get("entity_id")
         self._check_broadlink(entity_id)
-        try:
-            data_packet = self.broadlinkObjects[entity_id].check_data()
+        data_packet = self.broadlinkObjects[entity_id].check_data()
 
-            if data_packet != None:
-                data_packet = base64.b64encode(data_packet)
-                #data_packet = data_packet.hex()
-                
-            self.adbase.log(f"data_packet = {data_packet}")
+        if data_packet != None:
+            data_packet = base64.b64encode(data_packet)
+            #data_packet = data_packet.hex()
             
-            return data_packet
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
-            return False
+        self.adbase.log(f"data_packet = {data_packet}")
 
-    def send_data(self, entity_id, data_packet, protocol = None):
+    def send_data(self, **kwargs):
+        entity_id = kwargs.get("entity_id")
+        data_packet = kwargs.get("data_packet")
+        protocol = kwargs.get("protocol")
+
         self._check_broadlink(entity_id)
 
         if data_packet in self.args.get("base64", {}):
@@ -226,16 +208,11 @@ class Broadlink_App(ad.ADBase):
         elif protocol == "base64":
             data_packet = base64.b64decode(data_packet)
 
-        try:
-            self.broadlinkObjects[entity_id].auth()
-            self.broadlinkObjects[entity_id].send_data(data_packet)
-            return True
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
-            return False
+        self.broadlinkObjects[entity_id].send_data(data_packet)
+        if self.adbase.get_state(entity_id, copy=False) != "off": 
+            self.adbase.set_state(entity_id, state="on", attributes=self.entities[entity_id]["attributes"])
 
-    def update_temperature(self, kwargs):
+    def update_temperature(self, **kwargs):
         dev_entity_id = kwargs["device_entity_id"]
         entity_id = kwargs["entity_id"]
         new_temp = self.check_temperature(dev_entity_id)
@@ -248,49 +225,61 @@ class Broadlink_App(ad.ADBase):
     def check_temperature(self, entity_id):
         temperature = "unavailable"
         self._check_broadlink(entity_id)
-        try:
-            temperature = self.broadlinkObjects[entity_id].check_temperature()
-            if self.entities[entity_id]["use_temp_as_attribute"]:
-                self.entities[entity_id]["attributes"]["temperature"] = temperature
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
+        temperature = self.broadlinkObjects[entity_id].check_temperature()
+        if self.entities[entity_id]["use_temp_as_attribute"]:
+            self.entities[entity_id]["attributes"]["temperature"] = temperature
+
         return temperature 
 
-    def check_sensors(self, entity_id):
+    def check_sensors(self, **kwargs):
+        entity_id = kwargs["entity_id"]
         self._check_broadlink(entity_id)
-        try:
-            data = self.broadlinkObjects[entity_id].check_sensors()
-            return data
-        except:
-            self.adbase.log("Logged an error in errorlog")
-            self.adbase.error(traceback.format_exc())
-            return False
-    
+        data = self.broadlinkObjects[entity_id].check_sensors()
+        return data
+        
     def _check_broadlink(self, entity_id):
         if not entity_id in self.broadlinkObjects:
             raise ValueError (f"Broadlink with Entity_ID {entity_id}, doesn't exist")
 
-    def setup_broadlink_cb(self, kwargs):
-        self.setup_broadlink()
+    def setup_broadlink(self, **kwargs):
+        res = self.process_broadlinks()
+        b_service_domain = self.broadlinks.get("service_domain") #get app service domain
 
-    def setup_broadlink(self):
+        if b_service_domain is not None:
+            b_service_domain = f"broadlink_{b_service_domain}"
+            
+        else:
+            b_service_domain = "broadlink"
+        
+        if kwargs.get("init") is True:
+            self.adbase.register_service(f"{b_service_domain}/setup_broadlink", self.broadlink_services)
+
+        if res:
+            # register services
+            for service in self.avail_services:
+                self.adbase.register_service(f"{b_service_domain}/{service}", self.broadlink_services)
+
+    def process_broadlinks(self):
+        res = False
+        self.broadlinkObjects = {}
         self.adbase.log("Setting up Broadlink Devices")
         try:
             devices = broadlink.discover(5, self.args.get("local_ip"))
         except:
-            self.adbase.log("Logged an error in errorlog")
+            self.adbase.log("Logged an error in errorlog", level="WARNING")
             self.adbase.error(traceback.format_exc())
-            return False
 
         num = len(devices)
+
         if num > 0: # if it found more than 1 device on the network
             self.adbase.log(f"Found {num} Broadlink Devices on the Network")
         else:
-            self.adbase.log(f"Coundn't find any Broadlink Device on the Network")
-            return False
+            self.adbase.log(f"Coundn't find any Broadlink Device on the Network", level="WARNING")
 
         try:
+
+            b_namespace = self.broadlinks.get("namespace", "default") #get broadlink namespace
+
             for device in devices:
                 device.auth() #first get device authentication
                 device_mac = re.findall('..?', device.mac.hex())
@@ -306,16 +295,8 @@ class Broadlink_App(ad.ADBase):
                         continue
  
                     b_friendly_name = bl_settings.get("friendly_name", bl.replace("_", " ")) #get device friendly name
-                    b_namespace = bl_settings.get("namespace", "default") #get device namespace
 
                     self.adbase.set_namespace(b_namespace)
-
-                    b_service_domain = bl_settings.get("service_domain") #get app service domain
-
-                    if b_service_domain != None:
-                        b_service_domain = f"broadlink_{b_service_domain}"
-                    else:
-                        b_service_domain = "broadlink"
 
                     b_device_name = b_friendly_name.lower().replace(" ", "_")
                     b_device_domain =  bl_settings.get("entity_domain", "sensor")
@@ -326,6 +307,7 @@ class Broadlink_App(ad.ADBase):
                     entity_id = f"{b_device_domain}.{b_device_name}"
 
                     self.broadlinkObjects[entity_id] = device #store broadlink object
+                    self.broadlinkErrors[entity_id] = 0
 
                     self.entities[entity_id] = {}
                     self.entities[entity_id]["attributes"] = {"friendly_name" : b_friendly_name, "mac" : b_mac,
@@ -354,24 +336,20 @@ class Broadlink_App(ad.ADBase):
                         self.entities[entity_id]["temp_sensor_attributes"]["unit_of_measurement"] = unit_of_measurement
                         self.adbase.run_every(self.update_temperature, runtime, sensor_delay, device_entity_id = entity_id, entity_id = sensor_entity_id)
 
-                    # register services
-                    for service in self.avail_services:
-                        self.adbase.register_service(f"{b_service_domain}/{service}", self.broadlink_services)
         except:
-            self.adbase.log("Logged an error in errorlog")
+            self.adbase.log("Logged an error in errorlog", level="WARNING")
             self.adbase.error(traceback.format_exc())
-            return False
         
         if self.entities != {}:
             self.adbase.fire_event("Broadlink_Setup", entities=self.entities)
             self.adbase.log("Completed Broadlink Device setup")
-            return True
-        
+            res = True
+
+        return res
 
     def broadlink_services(self, namespace, domain, service, kwargs):
         self.adbase.log(f"{namespace} {domain} {service} {kwargs}", level="DEBUG")
 
-        func = getattr(self, service) #get the function first
         entity_id = kwargs.get("entity_id")
         if service != "setup_broadlink" and entity_id == None:
             raise ValueError("No Entity_ID given, please provide the Entity_ID of the Broadlink device to use")
@@ -379,7 +357,7 @@ class Broadlink_App(ad.ADBase):
         data = {"entity_id" : entity_id}
         if service == "send_data":
             data_packet = kwargs.get("data_packet")
-            if data_packet == None:
+            if data_packet is None:
                 raise ValueError("No data_packet given to send to Device, please provide the data_packet to use")
 
             data["data_packet"] = data_packet
@@ -387,13 +365,40 @@ class Broadlink_App(ad.ADBase):
 
         elif service == "update_temperature":
             data["device_entity_id"] = kwargs.get("device_entity_id")
+        
+        data["service"] = service
+        
+        self.adbase.run_in(self.run_service, 0, **data)
+    
+    def run_service(self, kwargs):
+        """Used to run the broadlink service"""
 
-        value = func(**data)
-        if value is False: #an error occured while trying to access broadlink. Mostlikely offline
-            self.adbase.set_state(entity_id, state="off", attributes=self.entities[entity_id]["attributes"])
-        else:
-            self.adbase.set_state(entity_id, state="on", attributes=self.entities[entity_id]["attributes"])
-        return value
+        service = kwargs.pop("service")
+        entity_id = kwargs.get("entity_id")
+
+        try:
+
+            if entity_id is None or self.broadlinkErrors.get(entity_id, 0) < 4:
+                func = getattr(self, service) #get the function first
+                func(**kwargs)
+
+                if entity_id is not None:
+                    self.broadlinkErrors[entity_id] = 0
+            
+        except broadlink.exceptions.DeviceOfflineError as b:
+            self.broadlinkErrors[entity_id] += 1 # increment errors by 1
+            self.adbase.error(b, level="ERROR")
+        
+        except Exception:
+            self.adbase.log("Logged an error in errorlog", level="WARNING")
+            self.adbase.error(traceback.format_exc())
+
+            if entity_id is not None:
+                self.adbase.set_state(entity_id, state="off", attributes=self.entities[entity_id]["attributes"])
+        
+        if entity_id is not None and self.broadlinkErrors.get(entity_id, 0) == 3:
+            # up to 3 errors, so  need to re-run the setup
+            self.adbase.run_in(self.run_service, 0, service="setup_broadlink")
 
     #def terminate(self): # when app terminates, remove broadlink entities
     #    for entity_id in self.broadlinkObjects:
