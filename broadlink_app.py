@@ -283,7 +283,7 @@ class Broadlink_App(ad.ADBase):
             for device in devices:
                 device.auth() #first get device authentication
                 device_mac = re.findall('..?', device.mac.hex())
-                device_mac.reverse()
+                #device_mac.reverse()
                 device_mac = ":".join(device_mac)
 
                 for bl, bl_settings in self.broadlinks.items():
